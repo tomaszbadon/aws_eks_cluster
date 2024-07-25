@@ -1,0 +1,667 @@
+Resources:
+  ClusterVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.10.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: AWS EKS Cluster VPC
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: ClusterVPC
+    Properties:
+      AvailabilityZone: eu-central-1a
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.10.10.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: public-eks-cluster-subnet-1
+        - Key: kubernetes.io/role/elb
+          Value: 1
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    DependsOn: ClusterVPC
+    Properties:
+      AvailabilityZone: eu-central-1b
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.10.11.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: public-eks-cluster-subnet-2
+        - Key: kubernetes.io/role/elb
+          Value: 1
+
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    DependsOn: ClusterVPC
+    Properties:
+      AvailabilityZone: eu-central-1c
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.10.12.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: public-eks-cluster-subnet-3
+        - Key: kubernetes.io/role/elb
+          Value: 1
+
+  PrivateSubnetX:
+    Type: AWS::EC2::Subnet
+    DependsOn: ClusterVPC
+    Properties:
+      AvailabilityZone: eu-central-1a
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.10.20.0/24
+      Tags:
+        - Key: Name
+          Value: private-eks-cluster-subnet-1
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+
+  PrivateSubnetY:
+    Type: AWS::EC2::Subnet
+    DependsOn: ClusterVPC
+    Properties:
+      AvailabilityZone: eu-central-1b
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.10.21.0/24
+      Tags:
+        - Key: Name
+          Value: private-eks-cluster-subnet-2
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+
+  PrivateSubnetZ:
+    Type: AWS::EC2::Subnet
+    DependsOn: ClusterVPC
+    Properties:
+      AvailabilityZone: eu-central-1c
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.10.22.0/24
+      Tags:
+        - Key: Name
+          Value: private-eks-cluster-subnet-3
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+
+  InternetGateway:
+    DependsOn: ClusterVPC
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+
+  AttachGateway:
+    DependsOn: [ClusterVPC, InternetGateway]
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ClusterVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  CustomPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: [ClusterVPC, InternetGateway]
+    Properties:
+      VpcId: !Ref ClusterVPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: [CustomPublicRouteTable, PublicSubnetA]
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetA
+      RouteTableId:
+        Ref: CustomPublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: [CustomPublicRouteTable, PublicSubnetB]
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetB
+      RouteTableId:
+        Ref: CustomPublicRouteTable
+
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: [CustomPublicRouteTable, PublicSubnetC]
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetC
+      RouteTableId:
+        Ref: CustomPublicRouteTable
+
+  InternetGatewayRoute:
+    Type: AWS::EC2::Route
+    DependsOn: [InternetGateway, CustomPublicRouteTable]
+    Properties:
+      RouteTableId:
+        Ref: CustomPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    DependsOn: [NatGatewayEIP, PrivateSubnetX]
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+
+  CustomPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: [ClusterVPC]
+    Properties:
+      VpcId: !Ref ClusterVPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table
+
+  PrivateNatRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: [NatGateway, CustomPrivateRouteTable]
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref CustomPrivateRouteTable
+
+  PrivateSubnetXRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: [CustomPrivateRouteTable, PrivateSubnetX]
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetX
+      RouteTableId:
+        Ref: CustomPrivateRouteTable
+
+  PrivateSubnetYRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: [CustomPrivateRouteTable, PrivateSubnetY]
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetY
+      RouteTableId:
+        Ref: CustomPrivateRouteTable
+
+  PrivateSubnetZRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: [CustomPrivateRouteTable, PrivateSubnetZ]
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetZ
+      RouteTableId:
+        Ref: CustomPrivateRouteTable
+
+  DefaultSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Enable SSH access and all internall trafic
+      VpcId: !Ref ClusterVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  DefaultSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DefaultSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref DefaultSecurityGroup
+
+  # POLICIES
+
+  EksClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: EksClusterRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/AmazonEKSClusterPolicy]
+
+  EksNodesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EksNodesRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EksNodesRoleForEC2
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ListEksClustersPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:ListClusters
+                Resource: "*"
+
+  EksEC2InstanceProfile:
+    DependsOn: EC2Role
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    DependsOn:
+      [
+        EksClusterRole,
+        PublicSubnetA,
+        PublicSubnetB,
+        PublicSubnetC,
+        PrivateSubnetX,
+        PrivateSubnetY,
+        PrivateSubnetZ,
+        DefaultSecurityGroup,
+      ]
+    Properties:
+      Name: ApplicationEksCluster
+      RoleArn: !GetAtt EksClusterRole.Arn
+      ResourcesVpcConfig:
+        EndpointPrivateAccess: false
+        EndpointPublicAccess: true
+        SecurityGroupIds:
+          - !Ref DefaultSecurityGroup
+        SubnetIds:
+          - !Ref PublicSubnetA
+          - !Ref PublicSubnetB
+          - !Ref PublicSubnetC
+          - !Ref PrivateSubnetX
+          - !Ref PrivateSubnetY
+          - !Ref PrivateSubnetZ
+
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: [EKSCluster]
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: EksNodeGroup
+      NodeRole: !GetAtt EksNodesRole.Arn
+      Subnets:
+          - !Ref PrivateSubnetX
+          - !Ref PrivateSubnetY
+          - !Ref PrivateSubnetZ
+      ScalingConfig:
+        DesiredSize: 2
+        MinSize: 0
+        MaxSize: 2
+      InstanceTypes:
+        # - t2.micro
+        - t2.small
+
+  OidcProvider:
+    Type: "AWS::IAM::OIDCProvider"
+    DependsOn: EKSCluster
+    Properties:
+      ClientIdList:
+        - "*"
+      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+
+  # MyEC2InstancePublic:
+  #   DependsOn:
+  #     [ClusterVPC, PublicSubnetA, DefaultSecurityGroup, EksEC2InstanceProfile]
+  #   Type: "AWS::EC2::Instance"
+  #   Properties:
+  #     InstanceType: t2.micro
+  #     KeyName: my-application-key
+  #     ImageId: ami-0e872aee57663ae2d
+  #     IamInstanceProfile: !Ref EksEC2InstanceProfile
+  #     NetworkInterfaces:
+  #       - AssociatePublicIpAddress: true
+  #         DeviceIndex: 0
+  #         GroupSet:
+  #           - !Ref DefaultSecurityGroup
+  #         SubnetId: !Ref PublicSubnetA
+  #     UserData:
+  #       Fn::Base64: |
+  #         #!/bin/bash
+  #         sudo apt-get
+  #         sudo apt install unzip
+  #         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  #         unzip awscliv2.zip
+  #         sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+
+  # MyEC2InstancePrivate:
+  #   DependsOn: [ClusterVPC, PrivateSubnetX, DefaultSecurityGroup]
+  #   Type: "AWS::EC2::Instance"
+  #   Properties:
+  #     InstanceType: t2.micro
+  #     KeyName: my-application-key
+  #     ImageId: ami-0e872aee57663ae2d
+  #     NetworkInterfaces:
+  #       - AssociatePublicIpAddress: false
+  #         DeviceIndex: 0
+  #         GroupSet:
+  #           - !Ref DefaultSecurityGroup
+  #         SubnetId: !Ref PrivateSubnetX
+
+# aws cloudformation create-stack --stack-name eks-application-cluster --template-body file://./cf/eks-cluster.yml --capabilities CAPABILITY_NAMED_IAM
+
+# # aws cloudformation update-stack --stack-name eks-application-cluster --template-body file://./cf/eks-cluster.yml --capabilities CAPABILITY_NAMED_IAM
+
+  RoleAwsLoadBalancerController:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AmazonEKSLoadBalancerControllerRole
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${Id}"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "oidc.eks.${AWS::Region}.amazonaws.com/id/${Id}:sub": "system:serviceaccount:${Namespace}:${ServiceAccount}"
+                  }
+                }
+              }
+            ]
+          }
+        - Id: !Select [0, !Split ['.', !Select [1, !Split ['://', !GetAtt EKSCluster.Endpoint]]]]
+          Namespace: kube-system
+          ServiceAccount: aws-load-balancer-controller
+
+  AWSLoadBalancerControllerIAMPolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: RoleAwsLoadBalancerController
+    Properties:
+      PolicyName: AWSLoadBalancerControllerIAMPolicy
+      Roles:
+       - !Ref RoleAwsLoadBalancerController
+      PolicyDocument: |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "iam:CreateServiceLinkedRole"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                        "StringEquals": {
+                            "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeAccountAttributes",
+                        "ec2:DescribeAddresses",
+                        "ec2:DescribeAvailabilityZones",
+                        "ec2:DescribeInternetGateways",
+                        "ec2:DescribeVpcs",
+                        "ec2:DescribeVpcPeeringConnections",
+                        "ec2:DescribeSubnets",
+                        "ec2:DescribeSecurityGroups",
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeNetworkInterfaces",
+                        "ec2:DescribeTags",
+                        "ec2:GetCoipPoolUsage",
+                        "ec2:DescribeCoipPools",
+                        "elasticloadbalancing:DescribeLoadBalancers",
+                        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+                        "elasticloadbalancing:DescribeListeners",
+                        "elasticloadbalancing:DescribeListenerCertificates",
+                        "elasticloadbalancing:DescribeSSLPolicies",
+                        "elasticloadbalancing:DescribeRules",
+                        "elasticloadbalancing:DescribeTargetGroups",
+                        "elasticloadbalancing:DescribeTargetGroupAttributes",
+                        "elasticloadbalancing:DescribeTargetHealth",
+                        "elasticloadbalancing:DescribeTags",
+                        "elasticloadbalancing:DescribeTrustStores"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "cognito-idp:DescribeUserPoolClient",
+                        "acm:ListCertificates",
+                        "acm:DescribeCertificate",
+                        "iam:ListServerCertificates",
+                        "iam:GetServerCertificate",
+                        "waf-regional:GetWebACL",
+                        "waf-regional:GetWebACLForResource",
+                        "waf-regional:AssociateWebACL",
+                        "waf-regional:DisassociateWebACL",
+                        "wafv2:GetWebACL",
+                        "wafv2:GetWebACLForResource",
+                        "wafv2:AssociateWebACL",
+                        "wafv2:DisassociateWebACL",
+                        "shield:GetSubscriptionState",
+                        "shield:DescribeProtection",
+                        "shield:CreateProtection",
+                        "shield:DeleteProtection"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:RevokeSecurityGroupIngress"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:CreateSecurityGroup"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:CreateTags"
+                    ],
+                    "Resource": "arn:aws:ec2:*:*:security-group/*",
+                    "Condition": {
+                        "StringEquals": {
+                            "ec2:CreateAction": "CreateSecurityGroup"
+                        },
+                        "Null": {
+                            "aws:RequestTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:CreateTags",
+                        "ec2:DeleteTags"
+                    ],
+                    "Resource": "arn:aws:ec2:*:*:security-group/*",
+                    "Condition": {
+                        "Null": {
+                            "aws:RequestTag/elbv2.k8s.aws/cluster": "true",
+                            "aws:ResourceTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:RevokeSecurityGroupIngress",
+                        "ec2:DeleteSecurityGroup"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                        "Null": {
+                            "aws:ResourceTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:CreateLoadBalancer",
+                        "elasticloadbalancing:CreateTargetGroup"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                        "Null": {
+                            "aws:RequestTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:CreateListener",
+                        "elasticloadbalancing:DeleteListener",
+                        "elasticloadbalancing:CreateRule",
+                        "elasticloadbalancing:DeleteRule"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:AddTags",
+                        "elasticloadbalancing:RemoveTags"
+                    ],
+                    "Resource": [
+                        "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
+                    ],
+                    "Condition": {
+                        "Null": {
+                            "aws:RequestTag/elbv2.k8s.aws/cluster": "true",
+                            "aws:ResourceTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:AddTags",
+                        "elasticloadbalancing:RemoveTags"
+                    ],
+                    "Resource": [
+                        "arn:aws:elasticloadbalancing:*:*:listener/net/*/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*"
+                    ]
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+                        "elasticloadbalancing:SetIpAddressType",
+                        "elasticloadbalancing:SetSecurityGroups",
+                        "elasticloadbalancing:SetSubnets",
+                        "elasticloadbalancing:DeleteLoadBalancer",
+                        "elasticloadbalancing:ModifyTargetGroup",
+                        "elasticloadbalancing:ModifyTargetGroupAttributes",
+                        "elasticloadbalancing:DeleteTargetGroup"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                        "Null": {
+                            "aws:ResourceTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:AddTags"
+                    ],
+                    "Resource": [
+                        "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
+                        "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
+                    ],
+                    "Condition": {
+                        "StringEquals": {
+                            "elasticloadbalancing:CreateAction": [
+                                "CreateTargetGroup",
+                                "CreateLoadBalancer"
+                            ]
+                        },
+                        "Null": {
+                            "aws:RequestTag/elbv2.k8s.aws/cluster": "false"
+                        }
+                    }
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:RegisterTargets",
+                        "elasticloadbalancing:DeregisterTargets"
+                    ],
+                    "Resource": "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:SetWebAcl",
+                        "elasticloadbalancing:ModifyListener",
+                        "elasticloadbalancing:AddListenerCertificates",
+                        "elasticloadbalancing:RemoveListenerCertificates",
+                        "elasticloadbalancing:ModifyRule"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+          }

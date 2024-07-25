@@ -1,0 +1,28 @@
+aws iam create-policy \
+    --policy-name AWSLoadBalancerControllerIAMPolicy \
+    --policy-document file://./json/AWSLoadBalancerControllerIAMPolicy.json
+
+eksctl create iamserviceaccount \
+  --cluster=ApplicationEksCluster \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --role-name AmazonEKSLoadBalancerControllerRole \
+  --attach-policy-arn=arn:aws:iam::141643165132:policy/AWSLoadBalancerControllerIAMPolicy \
+  --approve
+
+  aws eks update-kubeconfig --region eu-central-1 --name ApplicationEksCluster
+
+
+helm repo add eks https://aws.github.io/eks-charts
+
+helm repo update eks
+
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=ApplicationEksCluster \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set region=eu-central-1 \
+  --set vpcId=vpc-0fbe6452ee120ad01
+
+helm uninstall aws-load-balancer-controller eks/aws-load-balancer-controller
