@@ -77,10 +77,15 @@ def update_eks_stack(client)
 end
 
 def wait_until_stack_is_compete(client) 
+    previous_message = nil
     loop do
         sleep(5)
         status = get_stack_status(client)
-        puts "The stack: #$eks_stack_name is in status: #{status}"
+        message = "The stack: #$eks_stack_name is in status: #{status}"
+        if message != previous_message then
+            puts message
+            previous_message = message
+        end
         break if status.include?('_FAILED') or status.include?('_COMPLETE')
     end
 end
@@ -102,7 +107,7 @@ def run_demo
         end
     else
         stack_status = get_stack_status(client)
-        puts "The stack: #$eks_stack_name cannot be updated or created because its status: #{stack_status}"
+        puts "The stack: #$eks_stack_name cannot be updated or created because of its status: #{stack_status}"
     end
 
     # client = Aws::EKS::Client.new(region: 'eu-central-1');
