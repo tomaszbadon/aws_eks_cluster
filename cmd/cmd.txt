@@ -23,6 +23,9 @@ helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   --set serviceAccount.create=false \
   --set serviceAccount.name=aws-load-balancer-controller \
   --set region=eu-central-1 \
-  --set vpcId=vpc-0fbe6452ee120ad01
+  --set vpcId=vpc-007a6d54559fac696
 
 helm uninstall aws-load-balancer-controller eks/aws-load-balancer-controller
+
+
+https://gist.github.com/avishayp/33fcee06ee440524d21600e2e817b6b7
