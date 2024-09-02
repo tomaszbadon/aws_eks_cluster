@@ -1,0 +1,122 @@
+Resources:
+  # POLICIES
+
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TimeoutInMinutes: 10
+      TemplateURL: https://bucket-with-stacks.s3.eu-central-1.amazonaws.com/network-template.yml
+
+  EksClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EksClusterRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/AmazonEKSClusterPolicy]
+
+  EksNodesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EksNodesRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EksNodesRoleForEC2
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ListEksClustersPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:ListClusters
+                Resource: "*"
+
+  EksEC2InstanceProfile:
+    DependsOn: EC2Role
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    DependsOn: NetworkStack
+    Properties:
+      Name: ApplicationEksCluster
+      RoleArn: !GetAtt EksClusterRole.Arn
+      ResourcesVpcConfig:
+        EndpointPrivateAccess: false
+        EndpointPublicAccess: true
+        SecurityGroupIds:
+          - !GetAtt NetworkStack.Outputs.DefaultSecurityGroup
+        SubnetIds:
+          - !GetAtt NetworkStack.Outputs.PublicSubnetA
+          - !GetAtt NetworkStack.Outputs.PublicSubnetB
+          - !GetAtt NetworkStack.Outputs.PublicSubnetC
+          - !GetAtt NetworkStack.Outputs.PrivateSubnetX
+          - !GetAtt NetworkStack.Outputs.PrivateSubnetY
+          - !GetAtt NetworkStack.Outputs.PrivateSubnetZ
+
+  # NodeGroup:
+  #   Type: AWS::EKS::Nodegroup
+  #   DependsOn: [EKSCluster]
+  #   Properties:
+  #     ClusterName: !Ref EKSCluster
+  #     NodegroupName: EksNodeGroup
+  #     NodeRole: !GetAtt EksNodesRole.Arn
+  #     Subnets:
+  #         - !GetAtt NetworkStack.Outputs.PrivateSubnetX
+  #         - !GetAtt NetworkStack.Outputs.PrivateSubnetY
+  #         - !GetAtt NetworkStack.Outputs.PrivateSubnetZ
+  #     ScalingConfig:
+  #       DesiredSize: 2
+  #       MinSize: 0
+  #       MaxSize: 2
+  #     InstanceTypes:
+  #       # - t2.micro
+  #       - t2.small
+
+  OidcProvider:
+    Type: "AWS::IAM::OIDCProvider"
+    DependsOn: EKSCluster
+    Properties:
+      ClientIdList:
+        - "*"
+      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+
+  EksClusterRoles:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn: EKSCluster
+    Properties:
+      Parameters:
+        EKSClusterEndpoint: "https://0CF89CCF681A534B0BE3414D0CCAFE26.gr7.eu-central-1.eks.amazonaws.com"
+      TimeoutInMinutes: 10
+      TemplateURL: https://bucket-with-stacks.s3.eu-central-1.amazonaws.com/eks-cluster-roles.yml
