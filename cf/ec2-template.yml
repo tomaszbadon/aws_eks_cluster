@@ -1,0 +1,75 @@
+Parameters:
+  DefaultSecurityGroup:
+    Type: String
+    Description: Default Security Group
+  PublicSubnetId:
+    Type: String
+    Description: Public Subnet
+  PrivateSubnetId:
+    Type: String
+    Description: Private Subnet
+
+Resources:
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EksNodesRoleForEC2
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ListEksClustersPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:ListClusters
+                Resource: "*"
+
+  EksEC2InstanceProfile:
+    DependsOn: EC2Role
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  MyEC2InstancePublic:
+    DependsOn: EksEC2InstanceProfile
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: t2.micro
+      KeyName: my-application-key
+      ImageId: ami-0e872aee57663ae2d
+      IamInstanceProfile: !Ref EksEC2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref DefaultSecurityGroup
+          SubnetId: !Ref PublicSubnetId
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          sudo apt-get
+          sudo apt install unzip
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+
+  MyEC2InstancePrivate:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: t2.micro
+      KeyName: my-application-key
+      ImageId: ami-0e872aee57663ae2d
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref DefaultSecurityGroup
+          SubnetId: !Ref PrivateSubnetId

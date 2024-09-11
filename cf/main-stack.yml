@@ -1,11 +1,20 @@
 Resources:
-  # POLICIES
-
   NetworkStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TimeoutInMinutes: 10
       TemplateURL: https://bucket-with-stacks.s3.eu-central-1.amazonaws.com/network-template.yml
+
+  EC2Stack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: NetworkStack
+    Properties:
+      Parameters:
+        PublicSubnetId: !GetAtt NetworkStack.Outputs.PublicSubnetA
+        PrivateSubnetId: !GetAtt NetworkStack.Outputs.PrivateSubnetX
+        DefaultSecurityGroup: !GetAtt NetworkStack.Outputs.DefaultSecurityGroup
+      TimeoutInMinutes: 10
+      TemplateURL: https://bucket-with-stacks.s3.eu-central-1.amazonaws.com/ec2-template.yml
 
   EksClusterRole:
     Type: AWS::IAM::Role
@@ -38,37 +47,9 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
 
-  EC2Role:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: EksNodesRoleForEC2
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ListEksClustersPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - eks:ListClusters
-                Resource: "*"
-
-  EksEC2InstanceProfile:
-    DependsOn: EC2Role
-    Type: "AWS::IAM::InstanceProfile"
-    Properties:
-      Roles:
-        - !Ref EC2Role
-
   EKSCluster:
     Type: AWS::EKS::Cluster
-    DependsOn: NetworkStack
+    DependsOn: [NetworkStack, EksClusterRole]
     Properties:
       Name: ApplicationEksCluster
       RoleArn: !GetAtt EksClusterRole.Arn
@@ -117,6 +98,6 @@ Resources:
     DependsOn: EKSCluster
     Properties:
       Parameters:
-        EKSClusterEndpoint: "https://0CF89CCF681A534B0BE3414D0CCAFE26.gr7.eu-central-1.eks.amazonaws.com"
+        EKSClusterEndpoint: !GetAtt EKSCluster.Endpoint
       TimeoutInMinutes: 10
       TemplateURL: https://bucket-with-stacks.s3.eu-central-1.amazonaws.com/eks-cluster-roles.yml
