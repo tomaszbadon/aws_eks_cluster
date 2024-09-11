@@ -78,7 +78,7 @@ class StackDeployer
     end
     
     private def update_eks_stack()
-        template_body = File.read('../cf/eks-cluster.yml')
+        template_body = File.read(@template_location)
         parameters = { }
         begin
             response = @client.update_stack({
@@ -116,12 +116,9 @@ class StackDeployer
 
 end
 
-
-
-
 def run_demo
     eks_stack_name = 'eks-application-cluster'
-    deployer = StackDeployer.new('eu-central-1', eks_stack_name, '../cf/eks-cluster.yml')
+    deployer = StackDeployer.new('eu-central-1', eks_stack_name, '../cf/main-stack.yml')
     deployer.deploy()
 end
 

@@ -1,170 +1,11 @@
+Parameters:
+  EKSClusterEndpoint:
+    Type: String
+    Description: EKS Cluster Endpoint
+
 Resources:
-  # POLICIES
-
-  NetworkStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: s3://bucket-with-stacks/network-template.yml
-      Outputs:
-        VpcId: !Ref VpcId
-        PublicSubnetAId: !Ref PublicSubnetAId
-        PublicSubnetBId: !Ref PublicSubnetBId
-        PublicSubnetCId: !Ref PublicSubnetCId
-        PrivateSubnetXId: !Ref PrivateSubnetXId
-        PrivateSubnetYId: !Ref PrivateSubnetYId
-        PrivateSubnetZId: !Ref PrivateSubnetZId
-        DefaultSecurityGroupId: !Ref DefaultSecurityGroupId
-
-  EksClusterRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: EksClusterRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - eks.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      ManagedPolicyArns: [arn:aws:iam::aws:policy/AmazonEKSClusterPolicy]
-
-  EksNodesRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: EksNodesRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
-        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
-        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-
-  EC2Role:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: EksNodesRoleForEC2
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ListEksClustersPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - eks:ListClusters
-                Resource: "*"
-
-  EksEC2InstanceProfile:
-    DependsOn: EC2Role
-    Type: "AWS::IAM::InstanceProfile"
-    Properties:
-      Roles:
-        - !Ref EC2Role
-
-  EKSCluster:
-    Type: AWS::EKS::Cluster
-    DependsOn: NetworkStack
-    Properties:
-      Name: ApplicationEksCluster
-      RoleArn: !GetAtt EksClusterRole.Arn
-      ResourcesVpcConfig:
-        EndpointPrivateAccess: false
-        EndpointPublicAccess: true
-        SecurityGroupIds:
-          - !GetAtt NetworkStack.DefaultSecurityGroupId
-        SubnetIds:
-          - !GetAtt NetworkStack.PublicSubnetAId
-          - !GetAtt NetworkStack.PublicSubnetBId
-          - !GetAtt NetworkStack.PublicSubnetCId
-          - !GetAtt NetworkStack.PrivateSubnetXId
-          - !GetAtt NetworkStack.PrivateSubnetYId
-          - !GetAtt NetworkStack.PrivateSubnetZId
-
-  NodeGroup:
-    Type: AWS::EKS::Nodegroup
-    DependsOn: [EKSCluster]
-    Properties:
-      ClusterName: !Ref EKSCluster
-      NodegroupName: EksNodeGroup
-      NodeRole: !GetAtt EksNodesRole.Arn
-      Subnets:
-          - !GetAtt NetworkStack.PrivateSubnetXId
-          - !GetAtt NetworkStack.PrivateSubnetYId
-          - !GetAtt NetworkStack.PrivateSubnetZId
-      ScalingConfig:
-        DesiredSize: 2
-        MinSize: 0
-        MaxSize: 2
-      InstanceTypes:
-        # - t2.micro
-        - t2.small
-
-  OidcProvider:
-    Type: "AWS::IAM::OIDCProvider"
-    DependsOn: EKSCluster
-    Properties:
-      ClientIdList:
-        - "*"
-      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
-
-  # MyEC2InstancePublic:
-  #   DependsOn:
-  #     [ClusterVPC, PublicSubnetA, DefaultSecurityGroup, EksEC2InstanceProfile]
-  #   Type: "AWS::EC2::Instance"
-  #   Properties:
-  #     InstanceType: t2.micro
-  #     KeyName: my-application-key
-  #     ImageId: ami-0e872aee57663ae2d
-  #     IamInstanceProfile: !Ref EksEC2InstanceProfile
-  #     NetworkInterfaces:
-  #       - AssociatePublicIpAddress: true
-  #         DeviceIndex: 0
-  #         GroupSet:
-  #           - !Ref DefaultSecurityGroup
-  #         SubnetId: !Ref PublicSubnetA
-  #     UserData:
-  #       Fn::Base64: |
-  #         #!/bin/bash
-  #         sudo apt-get
-  #         sudo apt install unzip
-  #         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-  #         unzip awscliv2.zip
-  #         sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
-
-  # MyEC2InstancePrivate:
-  #   DependsOn: [ClusterVPC, PrivateSubnetX, DefaultSecurityGroup]
-  #   Type: "AWS::EC2::Instance"
-  #   Properties:
-  #     InstanceType: t2.micro
-  #     KeyName: my-application-key
-  #     ImageId: ami-0e872aee57663ae2d
-  #     NetworkInterfaces:
-  #       - AssociatePublicIpAddress: false
-  #         DeviceIndex: 0
-  #         GroupSet:
-  #           - !Ref DefaultSecurityGroup
-  #         SubnetId: !Ref PrivateSubnetX
-
-# aws cloudformation create-stack --stack-name eks-application-cluster --template-body file://./cf/eks-cluster.yml --capabilities CAPABILITY_NAMED_IAM
-
-# # aws cloudformation update-stack --stack-name eks-application-cluster --template-body file://./cf/eks-cluster.yml --capabilities CAPABILITY_NAMED_IAM
-
   RoleAwsLoadBalancerController:
     Type: AWS::IAM::Role
-    DependsOn: EKSCluster
     Properties:
       RoleName: AmazonEKSLoadBalancerControllerRole
       AssumeRolePolicyDocument: !Sub
@@ -186,7 +27,7 @@ Resources:
               }
             ]
           }
-        - Id: !Select [0, !Split ['.', !Select [1, !Split ['://', !GetAtt EKSCluster.Endpoint]]]]
+        - Id: !Select [0, !Split ['.', !Select [1, !Split ['://', !Ref EKSClusterEndpoint]]]]
           Namespace: kube-system
           ServiceAccount: aws-load-balancer-controller
 
